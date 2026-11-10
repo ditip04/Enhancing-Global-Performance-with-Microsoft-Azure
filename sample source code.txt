@@ -1,0 +1,114 @@
+For example:
+
+az login
+
+$location = "centralus"
+$project = "BingeWatch"
+
+$rgDev  = "rg-bingewatch-dev"
+$rgTest = "rg-bingewatch-test"
+$rgProd = "rg-bingewatch-prod"
+
+az group create `
+    --name $rgDev `
+    --location $location `
+    --tags Project=$project Environment=Dev Owner=Student
+
+az group create `
+    --name $rgTest `
+    --location $location `
+    --tags Project=$project Environment=Test Owner=Student
+
+az group create `
+    --name $rgProd `
+    --location $location `
+    --tags Project=$project Environment=Prod Owner=Student
+
+Then create the storage account:
+
+$storage = "bwostaticglobal"
+
+az storage account create `
+    --name $storage `
+    --resource-group $rgProd `
+    --location $location `
+    --sku Standard_LRS `
+    --kind StorageV2 `
+    --https-only true
+
+Enable the static website:
+
+az storage blob service-properties update `
+    --account-name $storage `
+    --static-website true `
+    --index-document index.html `
+    --404-document 404.html
+
+Then upload the website:
+
+az storage blob upload-batch `
+    --account-name $storage `
+    --destination '$web' `
+    --source ".\website" `
+    --overwrite
+
+That gives you the static website requirement without manually uploading every file through the portal.
+
+For App Service:
+
+$appName = "app-bwo-cus-h9c6axg5ajdtdgf3"
+$planName = "asp-bingewatch"
+
+az appservice plan create `
+    --name $planName `
+    --resource-group $rgProd `
+    --location $location `
+    --sku B1 `
+    --is-linux
+
+az webapp create `
+    --name $appName `
+    --resource-group $rgProd `
+    --plan $planName `
+    --runtime "NODE|20-lts"
+
+Then deploy the static website:
+
+Compress-Archive `
+    -Path ".\website\*" `
+    -DestinationPath ".\website.zip" `
+    -Force
+
+az webapp deploy `
+    --resource-group $rgProd `
+    --name $appName `
+    --src-path ".\website.zip" `
+    --type zip
+
+For Azure Files:
+
+az storage share create `
+    --account-name $storage `
+    --name "teamfiles"
+
+Upload team files:
+
+az storage file upload-batch `
+    --account-name $storage `
+    --destination "teamfiles" `
+    --source ".\teamfiles"
+
+And retrieve the storage key:
+
+$storageKey = az storage account keys list `
+    --resource-group $rgProd `
+    --account-name $storage `
+    --query "[0].value" `
+    --output tsv
+
+You can then use that key when demonstrating the SMB connection from the Windows VM:
+
+net use Z: \\bwostaticglobal.file.core.windows.net\teamfiles `
+    /user:localhost\bwostaticglobal `
+    $storageKey `
+    /persistent:yes
